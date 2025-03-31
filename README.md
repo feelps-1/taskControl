@@ -1,8 +1,20 @@
 # Task Control
-Uma aplicação em console para auxiliar no controle de tarefas utilizando cards e colunas, além disso é possível criar diferentes boards.
 
-## Diagrama entidade-relacionamento do programa
-Diagrama produzido baseado nas regras de negócio pedidas no desafio
+Task Control é uma aplicação de console para gerenciamento de tarefas utilizando um sistema de **cards e colunas**, permitindo a criação de **diferentes boards** para organização eficiente do trabalho.
+
+## Funcionalidades
+
+- Criar, selecionar e excluir **boards**.
+- Criar **cards** com título e descrição.
+- Mover cards entre colunas conforme a ordem definida no board.
+- Bloquear e desbloquear cards com justificativa.
+- Cancelar um card a partir de qualquer coluna (exceto a final).
+- Gerar relatórios de **tempo gasto por card em cada coluna**.
+- Gerar relatórios de **bloqueios de cards** (motivo e tempo bloqueado).
+
+## Modelo de Dados (ERD)
+
+O diagrama abaixo representa a estrutura do banco de dados do **Task Control**:
 
 ```mermaid
 erDiagram
@@ -23,7 +35,7 @@ erDiagram
         int card_id FK
         int from_column_id FK
         int to_column_id FK
-        datetime moved_at
+        timestamp moved_at
     }
 
     BOARDS_COLUMNS {
@@ -41,34 +53,65 @@ erDiagram
 
     BLOCKS {
         int id PK
-        datetime blocked_at
+        timestamp blocked_at
         string block_reason
-        datetime unblocked_at
+        timestamp unblocked_at
         string unblock_reason
         int card_id FK
     }
-
 ```
-## Regras de negócio
-Todos requisitos foram implementados, incluindo os opcionais.
 
-### Requisitos
-    1 - O código deve iniciar disponibilizando um menu com as seguintes opções: Criar novo board, Selecionar board, Excluir boards, Sair;
-    2 - O código deve salvar o board com suas informações no banco de dados MySQL;
+## Regras de Negócio
 
-### Regras dos boards
-    1 - Um board deve ter um nome e ser composto por pelo menos 3 colunas ( coluna onde o card é colocado inicialmente, coluna para cards com tarefas concluídas e coluna para cards cancelados, a nomenclatura das colunas é de escolha livre);
-    2 - As colunas tem seu respectivo nome, ordem que aparece no board e seu tipo (Inicial, cancelamento, final e pendente);
-    3 - Cada board só pode ter 1 coluna do tipo inicial, cancelamento e final, colunas do tipo pendente podem ter quantas forem necessárias, obrigatoriamente a coluna inicial deve ser a primeira coluna do board, a final deve ser a penúltima e a de cancelamento deve ser a última
-    4 - As colunas podem ter 0 ou N cards, cada card tem o seu título, descrição, data de criação e se está bloqueado;
-    5 - Um card deve navegar nas colunas seguindo a ordem delas no board, sem pular nenhuma etapa, exceto pela coluna de cards cancelados que pode receber cards diretamente de qualquer coluna que não for a coluna final;
-    6 - Se um card estiver marcado como bloqueado ele não pode ser movido até ser desbloqueado
-    7 - Para bloquear um card deve-se informar o motivo de seu bloqueio e para desbloquea-lo deve-se também informar o motivo
+### **Requisitos Gerais**
+1. O sistema inicia com um **menu principal** com as opções:
+   - Criar novo board
+   - Selecionar board
+   - Excluir board
+   - Sair
+2. Os boards e suas informações são armazenados no banco de dados MySQL.
 
-### Menu de manipulação de board selecionado
-    1 - O menu deve permitir mover o card para próxima coluna, cancelar um card, criar um card, bloquea-lo, desbloquea-lo e fechar board;
+### **Regras dos Boards**
+1. Cada board deve ter um **nome** e pelo menos **3 colunas**:
+   - **Inicial** (para novos cards)
+   - **Final** (para tarefas concluídas)
+   - **Cancelamento** (para cards cancelados)
+2. As colunas têm um **nome**, uma **ordem** no board e um **tipo**:
+   - **Inicial** (somente 1 por board)
+   - **Final** (somente 1 por board, penúltima coluna)
+   - **Cancelamento** (somente 1 por board, última coluna)
+   - **Pendente** (quantas forem necessárias, para organização intermediária)
+3. Os cards devem **seguir a ordem** das colunas do board, sem pular etapas.
+4. A coluna de **cancelamento** pode receber cards de qualquer coluna, exceto a final.
+5. Cards **bloqueados** não podem ser movidos até serem desbloqueados.
+6. Para bloquear um card, é necessário informar um **motivo**.
+7. Para desbloquear um card, também é necessário informar um **motivo**.
 
-### Requisitos opcionais
-    1 - Um card deve armazenar a data e hora em que foi colocado em uma coluna e a data e hora que foi movido pra a próxima coluna;
-    2 - O código deve gerar um relatório do board selecionado com o tempo que cada tarefa demorou para ser concluída com informações do tempo que levou em cada coluna
-    3 - O código dever gerar um relatório do board selecionado com o os bloqueios dos cards, com o tempo que ficaram bloqueados e com a justificativa dos bloqueios e desbloqueios.
+### **Menu de Manipulação de Board**
+No board selecionado, o menu deve permitir:
+- Mover um card para a próxima coluna.
+- Cancelar um card.
+- Criar um novo card.
+- Bloquear e desbloquear um card.
+- Fechar board.
+
+## Relatórios Disponíveis
+
+### 1. **Tempo por Card em Cada Coluna**
+Gera um relatório com:
+- Tempo total para concluir a tarefa.
+- Tempo que cada card ficou em cada coluna.
+
+### 2. **Histórico de Bloqueios**
+Mostra:
+- Tempo total de bloqueio por card.
+- Motivos dos bloqueios e desbloqueios.
+
+## Tecnologias Utilizadas
+
+- **Java**
+- **MySQL** para persistência dos dados
+- **Liquibase** para conexão com o banco de dados
+- **Lombok** para redução de boilerplate
+- **Mermaid** para diagrama entidade-relacionamento
+
