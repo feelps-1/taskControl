@@ -4,9 +4,9 @@ import java.sql.Timestamp;
 
 public record CardTimeReportDTO(
         Long cardId,
-        Long fromColumnId,
-        Long toColumnId,
+        String cardName,
+        String fromColumnName,
+        String toColumnName,
         Timestamp enteredAt,
-        Timestamp leftAt,
-        Long durationSeconds
+        Timestamp leftAt
 ) {}

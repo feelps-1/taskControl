@@ -1,10 +1,9 @@
 package dev.crab.ui;
 
-
 import dev.crab.dto.BlockReportDTO;
 import dev.crab.dto.BoardColumnInfoDTO;
 import dev.crab.dto.CardTimeReportDTO;
-import dev.crab.persistence.dao.CardDAO;
+import dev.crab.persistence.converter.OffSetDateTimeConverter;
 import dev.crab.persistence.entity.BoardColumnEntity;
 import dev.crab.persistence.entity.BoardEntity;
 import dev.crab.persistence.entity.CardEntity;
@@ -12,6 +11,9 @@ import dev.crab.service.*;
 import lombok.AllArgsConstructor;
 
 import java.sql.SQLException;
+import java.time.*;
+import java.time.format.DateTimeFormatter;
+import java.time.format.FormatStyle;
 import java.util.List;
 import java.util.Scanner;
 
@@ -19,6 +21,7 @@ import static dev.crab.persistence.config.ConnectionConfig.getConnection;
 
 @AllArgsConstructor
 public class BoardMenu {
+    private static final DateTimeFormatter FORMATTER = DateTimeFormatter.ofLocalizedDateTime(FormatStyle.MEDIUM);
     private final Scanner scanner = new Scanner(System.in).useDelimiter("\n");
 
     private final BoardEntity entity;
@@ -55,7 +58,7 @@ public class BoardMenu {
                     default -> System.out.println("Opção inválida, informe uma opção do menu");
                 }
             }
-        }catch (SQLException ex){
+        } catch (SQLException ex) {
             ex.printStackTrace();
             System.exit(0);
         }
@@ -67,37 +70,48 @@ public class BoardMenu {
         try (var connection = getConnection()) {
             var boardReport = new BoardService(connection).getBoardReport(entity.getId());
 
-            // Relatório de movimentações (existente)
             printTimeReport(boardReport.timeReport());
 
-            // Novo relatório de bloqueios
             printBlockReport(boardReport.blockReport());
         }
     }
 
-    private void printTimeReport(List<CardTimeReportDTO> timeReports){
+    private void printTimeReport(List<CardTimeReportDTO> timeReports) {
         if (timeReports.isEmpty()) {
             System.out.println("Nenhum movimento de cartão registrado neste board.");
             return;
         }
 
         System.out.println("\nMovimentações dos Cartões:");
-        for (CardTimeReportDTO report : timeReports) {
-            String leftAt = report.leftAt() != null ? report.leftAt().toString() : "N/A (ainda na coluna)";
-            String duration = report.durationSeconds() != null
-                    ? formatDuration(report.durationSeconds())
-                    : "Em andamento";
 
-            System.out.printf(
-                    "Cartão %d - Da coluna %d para %d | Entrou em: %s | Saiu em: %s | Tempo: %s%n",
-                    report.cardId(),
-                    report.fromColumnId(),
-                    report.toColumnId(),
-                    report.enteredAt(),
-                    leftAt,
-                    duration
-            );
+        for (CardTimeReportDTO report : timeReports) {
+            printTimeReportEntry(report);
         }
+    }
+
+    private void printTimeReportEntry(CardTimeReportDTO report) {
+        OffsetDateTime enteredAtOffset = OffSetDateTimeConverter.toOffsetDateTime(report.enteredAt());
+        OffsetDateTime leftAtOffset = OffSetDateTimeConverter.toOffsetDateTime(report.leftAt());
+
+        ZonedDateTime entered = toZonedDateTime(enteredAtOffset);
+        ZonedDateTime left = toZonedDateTime(leftAtOffset);
+
+        String leftAt = left != null ? left.format(FORMATTER) : "N/A (ainda na coluna)";
+        Duration duration = calculateDuration(enteredAtOffset, leftAtOffset);
+
+        System.out.printf(
+                """
+                        Cartão %d - %s - Da coluna %s para %s
+                        Entrou em: %s | Saiu em: %s | Tempo: %s%n
+                        """,
+                report.cardId(),
+                report.cardName(),
+                report.fromColumnName(),
+                report.toColumnName(),
+                entered != null ? entered.format(FORMATTER) : "Data desconhecida",
+                leftAt,
+                formatDuration(duration)
+        );
     }
 
     private void printBlockReport(List<BlockReportDTO> blocks) {
@@ -109,77 +123,81 @@ public class BoardMenu {
         }
 
         for (BlockReportDTO block : blocks) {
-            String status = block.unblockedAt() != null ? "DESBLOQUEADO" : "BLOQUEADO";
-            String unblockTime = block.unblockedAt() != null ?
-                    " em " + block.unblockedAt() : "";
-            String duration = formatDuration(block.durationSeconds());
-
-            System.out.printf(
-                    """
-                    [Cartão %d] %s
-                    ▸ Bloqueado em: %s
-                    ▸ Motivo do bloqueio: %s
-                    ▸ Desbloqueio%s
-                    ▸ Motivo do desbloqueio: %s
-                    ▸ Tempo total bloqueado: %s
-                    ------------------------------
-                    """,
-                    block.cardId(),
-                    status,
-                    block.blockedAt(),
-                    block.blockReason(),
-                    unblockTime,
-                    block.unblockReason(),
-                    duration
-            );
+            printBlockReportEntry(block);
         }
     }
 
-    private String formatDuration(Long seconds) {
-        if (seconds == null) {
-            return "Em andamento";
-        }
+    private void printBlockReportEntry(BlockReportDTO block) {
+        String status = block.unblockedAt() != null ? "DESBLOQUEADO" : "BLOQUEADO";
+        OffsetDateTime blockAtOffset = OffSetDateTimeConverter.toOffsetDateTime(block.blockedAt());
+        OffsetDateTime unblockOffset = OffSetDateTimeConverter.toOffsetDateTime(block.unblockedAt());
 
-        // Se o tempo for negativo (erro de cálculo), retornar uma mensagem de erro
-        if (seconds < 0) {
-            return "Tempo inválido";
-        }
+        ZonedDateTime blockAt = toZonedDateTime(blockAtOffset);
+        ZonedDateTime unblock = toZonedDateTime(unblockOffset);
 
-        // Formatar a duração em dias, horas, minutos e segundos
-        long dias = seconds / 86400;
-        long horas = (seconds % 86400) / 3600;
-        long minutos = (seconds % 3600) / 60;
-        long segundos = seconds % 60;
+        String outputBlockedAt = blockAt != null ? blockAt.format(FORMATTER) : "Data desconhecida";
+        String outputUnblockedAt = unblock != null ? unblock.format(FORMATTER) : "Ainda bloqueado";
+        Duration duration = calculateDuration(blockAtOffset, unblockOffset);
 
-        return String.format("%d dias, %02d:%02d:%02d", dias, horas, minutos, segundos);
+        System.out.printf(
+                """
+                        [Cartão %d - %s] %s
+                        ▸ Bloqueado em: %s
+                        ▸ Motivo do bloqueio: %s
+                        ▸ Desbloqueio: %s
+                        ▸ Motivo do desbloqueio: %s
+                        ▸ Tempo total bloqueado: %s
+                        ------------------------------
+                        """,
+                block.cardId(),
+                block.cardName(),
+                status,
+                outputBlockedAt,
+                block.blockReason(),
+                outputUnblockedAt,
+                block.unblockReason(),
+                formatDuration(duration)
+        );
     }
 
-    private void createCard() throws SQLException{
+    private ZonedDateTime toZonedDateTime(OffsetDateTime offsetDateTime) {
+        return offsetDateTime != null ? offsetDateTime.atZoneSameInstant(ZoneId.systemDefault()) : null;
+    }
+
+    private Duration calculateDuration(OffsetDateTime start, OffsetDateTime end) {
+        return start != null ? (end != null ? Duration.between(start, end) : Duration.between(start, OffsetDateTime.now())) : Duration.ZERO;
+    }
+
+    private String formatDuration(Duration duration) {
+        return "%d dias, %02d:%02d".formatted(duration.toDays(), duration.toHoursPart(), duration.toMinutesPart());
+    }
+
+    private void createCard() throws SQLException {
         var card = new CardEntity();
         System.out.println("Informe o título do card");
         card.setTitle(scanner.next());
         System.out.println("Informe a descrição do card");
         card.setDescription(scanner.next());
         card.setBoardColumn(entity.getInitialColumn());
-        try(var connection = getConnection()){
+        try (var connection = getConnection()) {
             new CardService(connection).insert(card);
         }
     }
 
-    private void moveCardToNextColumn() throws SQLException{
+    private void moveCardToNextColumn() throws SQLException {
         System.out.println("Informe o id do card que deseja mover para a próxima coluna");
         var cardId = scanner.nextLong();
         var boardColumnsInfo = entity.getBoardColumns().stream()
                 .map(bc -> new BoardColumnInfoDTO(bc.getId(), bc.getOrder(), bc.getKind()))
                 .toList();
-        try(var connection = getConnection()){
+        try (var connection = getConnection()) {
             new CardService(connection).moveToNextColumn(cardId, boardColumnsInfo);
-        } catch (RuntimeException ex){
+        } catch (RuntimeException ex) {
             System.out.println(ex.getMessage());
         }
     }
 
-    private void blockCard() throws SQLException{
+    private void blockCard() throws SQLException {
         System.out.println("Informe o id do card que será bloqueado");
         var cardId = scanner.nextLong();
         System.out.println("Informe o motivo do bloqueio do card");
@@ -187,41 +205,41 @@ public class BoardMenu {
         var boardColumnsInfo = entity.getBoardColumns().stream()
                 .map(bc -> new BoardColumnInfoDTO(bc.getId(), bc.getOrder(), bc.getKind()))
                 .toList();
-        try(var connection = getConnection()){
+        try (var connection = getConnection()) {
             new CardService(connection).block(cardId, reason, boardColumnsInfo);
-        } catch (RuntimeException ex){
+        } catch (RuntimeException ex) {
             System.out.println(ex.getMessage());
         }
     }
 
-    private void unblockCard() throws SQLException{
+    private void unblockCard() throws SQLException {
         System.out.println("Informe o id do card que será desbloqueado");
         var cardId = scanner.nextLong();
         System.out.println("Informe o motivo do desbloqueio do card");
         var reason = scanner.next();
-        try(var connection = getConnection()){
+        try (var connection = getConnection()) {
             new CardService(connection).unblock(cardId, reason);
-        } catch (RuntimeException ex){
+        } catch (RuntimeException ex) {
             System.out.println(ex.getMessage());
         }
     }
 
-    private void cancelCard() throws SQLException{
+    private void cancelCard() throws SQLException {
         System.out.println("Informe o id do card que deseja mover para a coluna de cancelamento");
         var cardId = scanner.nextLong();
         var cancelColumn = entity.getCancelColumn();
         var boardColumnsInfo = entity.getBoardColumns().stream()
                 .map(bc -> new BoardColumnInfoDTO(bc.getId(), bc.getOrder(), bc.getKind()))
                 .toList();
-        try(var connection = getConnection()){
+        try (var connection = getConnection()) {
             new CardService(connection).cancel(cardId, cancelColumn.getId(), boardColumnsInfo);
-        } catch (RuntimeException ex){
+        } catch (RuntimeException ex) {
             System.out.println(ex.getMessage());
         }
     }
 
-    private void showBoard() throws SQLException{
-        try(var connection = getConnection()){
+    private void showBoard() throws SQLException {
+        try (var connection = getConnection()) {
             var optional = new BoardQueryService(connection).showBoardDetails(entity.getId());
             optional.ifPresent(b -> {
                 System.out.printf("Board [%s,%s]\n", b.id(), b.name());
@@ -232,15 +250,15 @@ public class BoardMenu {
         }
     }
 
-    private void showColumn() throws SQLException{
+    private void showColumn() throws SQLException {
         var columnsIds = entity.getBoardColumns().stream().map(BoardColumnEntity::getId).toList();
         var selectedColumnId = -1L;
-        while (!columnsIds.contains(selectedColumnId)){
+        while (!columnsIds.contains(selectedColumnId)) {
             System.out.printf("Escolha uma coluna do board %s pelo id\n", entity.getName());
             entity.getBoardColumns().forEach(c -> System.out.printf("%s - %s [%s]\n", c.getId(), c.getName(), c.getKind()));
             selectedColumnId = scanner.nextLong();
         }
-        try(var connection = getConnection()){
+        try (var connection = getConnection()) {
             var column = new BoardColumnQueryService(connection).findById(selectedColumnId);
             column.ifPresent(co -> {
                 System.out.printf("Coluna %s tipo %s\n", co.getName(), co.getKind());
@@ -250,10 +268,10 @@ public class BoardMenu {
         }
     }
 
-    private void showCard() throws SQLException{
+    private void showCard() throws SQLException {
         System.out.println("Informe o id do card que deseja visualizar");
         var selectedCardId = scanner.nextLong();
-        try(var connection  = getConnection()){
+        try (var connection = getConnection()) {
             new CardQueryService(connection).findById(selectedCardId)
                     .ifPresentOrElse(
                             c -> {
